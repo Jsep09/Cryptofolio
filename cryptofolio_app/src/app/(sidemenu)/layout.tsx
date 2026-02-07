@@ -1,7 +1,7 @@
 "use client"; // ใช้ Client Component เพื่อรองรับการคลิกเปิด-ปิดในอนาคต
 
-import React from "react";
-import { LayoutDashboard, Wallet, History, Settings, Menu, LogOut, User } from "lucide-react";
+import React, { useState } from "react";
+import { LayoutDashboard, Wallet, History, Settings, Menu, LogOut, User, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/app/lib/utils"; // ฟังก์ชันช่วยจัดการ Class ของ Shadcn
@@ -16,6 +16,7 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // กำหนดเมนู Sidebar
   const navigation = [
@@ -28,12 +29,32 @@ export default function DashboardLayout({
   return (
     <div className="flex h-screen text-foreground overflow-hidden relative">
       <Background />
-      {/* --- SIDEBAR (Desktop) --- */}
-      <aside className="hidden md:flex w-64 flex-col border-r border-border bg-sidebar">
-        <div className="p-6">
+      
+      {/* Mobile Sidebar Overlay */}
+      {isMobileSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={() => setIsMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* --- SIDEBAR (Desktop + Mobile) --- */}
+      <aside className={cn(
+        "fixed md:static inset-y-0 left-0 z-50 w-64 flex flex-col border-r border-border bg-sidebar transition-transform duration-300 ease-in-out",
+        "md:translate-x-0",
+        isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        {/* Mobile Close Button */}
+        <div className="flex items-center justify-between p-6 md:block">
           <h2 className="text-xl font-bold bg-gradient-to-r from-neon-cyan to-neon-lime bg-clip-text text-transparent">
             Cryptofolio
           </h2>
+          <button 
+            onClick={() => setIsMobileSidebarOpen(false)}
+            className="md:hidden p-2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <nav className="flex-1 px-4 space-y-1">
@@ -41,6 +62,7 @@ export default function DashboardLayout({
             <Link
               key={item.name}
               href={item.href}
+              onClick={() => setIsMobileSidebarOpen(false)}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
                 pathname === item.href
@@ -83,7 +105,10 @@ export default function DashboardLayout({
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile Header */}
         <header className="h-16 border-b border-border flex items-center justify-between px-4 md:px-8 bg-background/80 backdrop-blur-xl">
-          <button className="md:hidden p-2 text-muted-foreground hover:text-foreground transition-colors">
+          <button 
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className="md:hidden p-2 text-muted-foreground hover:text-foreground transition-colors"
+          >
             <Menu className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-4">
