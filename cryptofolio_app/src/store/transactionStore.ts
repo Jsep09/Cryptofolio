@@ -30,6 +30,7 @@ interface TransactionStore {
   // Computed getters
   getUniqueCoinIds: () => string[];
   getTransactionsBySymbol: (symbol: string) => Transaction[];
+  getTransactionsByCoinId: (coinId: string) => Transaction[];
 }
 
 export const useTransactionStore = create<TransactionStore>()(
@@ -113,6 +114,13 @@ export const useTransactionStore = create<TransactionStore>()(
       getTransactionsBySymbol: (symbol) => {
         const { transactions } = get();
         return transactions.filter((t) => t.symbol === symbol);
+      },
+
+      // Get transactions by coin ID
+      getTransactionsByCoinId: (coinId) => {
+        const { transactions } = get();
+        return transactions.filter((t) => t.coinId === coinId)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       },
     }),
     {

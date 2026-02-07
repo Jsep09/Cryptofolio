@@ -13,7 +13,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransactionStore, Transaction } from '@/store/transactionStore';
 import { useAuth } from '@/components/auth-provider';
 import { createClient } from '@/lib/supabase/client';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
 interface AssetData {
   coinId: string;
@@ -55,9 +55,11 @@ export function usePortfolioData(): PortfolioData {
     queryFn: async () => {
       if (!user) return [];
       
+      console.time('⏱️ Fetch Transactions (Supabase)');
       const { data, error } = await supabase
         .from('transactions')
         .select('*');
+      console.timeEnd('⏱️ Fetch Transactions (Supabase)');
         
       if (error) throw error;
       
@@ -92,6 +94,7 @@ export function usePortfolioData(): PortfolioData {
       }
 
       try {
+        console.time('⏱️ Fetch Prices (CoinGecko API)');
         const response = await fetch(
           `/api/crypto/prices?ids=${coinIds.join(',')}`
         );
@@ -101,6 +104,7 @@ export function usePortfolioData(): PortfolioData {
         }
 
         const prices: Record<string, number> = await response.json();
+        console.timeEnd('⏱️ Fetch Prices (CoinGecko API)');
         return prices;
       } catch (err) {
         console.error('Failed to fetch crypto prices:', err);
@@ -112,9 +116,12 @@ export function usePortfolioData(): PortfolioData {
     enabled: coinIds.length > 0,
   });
 
-  // 4. Calculate portfolio metrics
-  const calculatePortfolioData = (): Omit<PortfolioData, 'isLoading' | 'error' | 'lastUpdated' | 'refetch' | 'isRefetching'> => {
+  // 4. Calculate portfolio metrics (memoized)
+  const portfolioMetrics = useMemo(() => {
+    console.time('⏱️ Calculate Portfolio Metrics');
+    
     if (!priceData || Object.keys(priceData).length === 0) {
+      console.timeEnd('⏱️ Calculate Portfolio Metrics');
       return {
         totalMarketValue: 0,
         totalCostBasis: 0,
@@ -170,14 +177,16 @@ export function usePortfolioData(): PortfolioData {
     const unrealizedPL = totalMarketValue - totalCostBasis;
     const unrealizedPLPercent = totalCostBasis > 0 ? (unrealizedPL / totalCostBasis) * 100 : 0;
 
-    assets.forEach((asset)=>{
-      if(totalMarketValue > 0){
+    assets.forEach((asset) => {
+      if (totalMarketValue > 0) {
         asset.portfolioShare = (asset.marketValue / totalMarketValue) * 100;
-      }else{
+      } else {
         asset.portfolioShare = 0;
       }
-    })
+    });
 
+    console.timeEnd('⏱️ Calculate Portfolio Metrics');
+    
     return {
       totalMarketValue,
       totalCostBasis,
@@ -185,9 +194,7 @@ export function usePortfolioData(): PortfolioData {
       unrealizedPLPercent,
       assets,
     };
-  };
-
-  const portfolioMetrics = calculatePortfolioData();
+  }, [transactions, priceData]); // Only recalculate when these change
 
   return {
     ...portfolioMetrics,

@@ -14,7 +14,7 @@ interface CoinDisplayProps {
   textClassName?: string;
 }
 
-export function CoinDisplay({
+export const CoinDisplay = React.memo(function CoinDisplay({
   id,
   symbol,
   showName = false,
@@ -60,4 +60,4 @@ export function CoinDisplay({
       </div>
     </div>
   );
-}
+});

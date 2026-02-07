@@ -33,7 +33,7 @@ interface SearchResponse {
 }
 
 interface CryptoAutocompleteProps {
-  onSelect: (id: string) => void;
+  onSelect: (coin: Coin) => void;
   className?: string;
 }
 
@@ -67,7 +67,7 @@ export function CryptoAutocomplete({ onSelect, className }: CryptoAutocompletePr
   const handleSelect = (coin: Coin) => {
     setSelectedCoin(coin);
     setOpen(false);
-    onSelect(coin.id);
+    onSelect(coin);
   };
 
   return (
