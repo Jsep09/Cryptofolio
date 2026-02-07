@@ -1,94 +1,53 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   PieChart,
   Pie,
   Cell,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
   ResponsiveContainer,
-  LineChart,
-  Line,
 } from "recharts";
+
 import {
   TrendingUp,
   TrendingDown,
   Activity,
-  DollarSign,
   Bitcoin,
   Wallet,
   ArrowUpRight,
-  ArrowDownRight,
   RefreshCw,
   ShieldCheck,
   Zap,
 } from "lucide-react";
+import { usePortfolioData } from "@/hooks/usePortfolioData";
+import { useTransactionStore } from "@/store/transactionStore";
+import { format } from "date-fns";
+import { CoinDisplay } from "@/components/coin-display";
 
-// --- Mock Data ---
+// --- Constants ---
+const COLORS = ["#3B82F6", "#CCFF00", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"];
 
-const ASSET_ALLOCATION_DATA = [
-  { name: "Crypto", value: 65, color: "#3B82F6" }, // Electric Blue
-  { name: "Stocks", value: 25, color: "#CCFF00" }, // Cyber Lime
-  { name: "Cash", value: 10, color: "#10B981" }, // Emerald Green
-];
+// --- Animation Components ---
+const SkeletonPulse = ({ className = "" }: { className?: string }) => (
+  <motion.div 
+    initial={{ opacity: 0.5 }}
+    animate={{ opacity: [0.5, 0.8, 0.5] }}
+    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+    className={`bg-zinc-800/50 rounded-md ${className}`} 
+  />
+);
 
-const PERFORMANCE_DATA = [
-  { day: "Day 1", value: 120000 },
-  { day: "Day 2", value: 121500 },
-  { day: "Day 3", value: 119800 },
-  { day: "Day 4", value: 122400 },
-  { day: "Day 5", value: 123900 },
-  { day: "Day 6", value: 124500 },
-  { day: "Day 7", value: 125450 },
-];
-
-const TOP_HOLDINGS = [
-  {
-    id: 1,
-    name: "Bitcoin",
-    symbol: "BTC",
-    price: 64230.5,
-    value: 85400.00,
-    weight: 45,
-    change: 2.4,
-    history: [62000, 62500, 63000, 62800, 63500, 64000, 64230],
-  },
-  {
-    id: 2,
-    name: "Ethereum",
-    symbol: "ETH",
-    price: 3450.12,
-    value: 25600.50,
-    weight: 25,
-    change: -1.2,
-    history: [3500, 3480, 3490, 3460, 3440, 3420, 3450],
-  },
-  {
-    id: 3,
-    name: "Solana",
-    symbol: "SOL",
-    price: 145.6,
-    value: 8500.00,
-    weight: 15,
-    change: 5.8,
-    history: [130, 135, 138, 140, 142, 144, 145.6],
-  },
-  {
-    id: 4,
-    name: "Nvidia",
-    symbol: "NVDA",
-    price: 920.4,
-    value: 5950.00,
-    weight: 15,
-    change: 0.8,
-    history: [900, 905, 910, 912, 915, 918, 920],
-  },
-];
+const SkeletonRow = () => (
+   <div className="flex items-center gap-3 w-full">
+     <SkeletonPulse className="h-8 w-8 rounded-full" />
+     <div className="flex flex-col gap-2 flex-1">
+       <SkeletonPulse className="h-3 w-24" />
+       <SkeletonPulse className="h-2 w-16" />
+     </div>
+     <SkeletonPulse className="h-4 w-12" />
+   </div>
+);
 
 // --- Utilities ---
 const formatCurrency = (value: number) =>
@@ -98,7 +57,6 @@ const formatCurrency = (value: number) =>
   }).format(value);
 
 // --- Sub-Components ---
-
 const BentoCard = ({
   children,
   className = "",
@@ -138,6 +96,43 @@ const BentoCard = ({
 export default function WealthOverviewDashboard() {
   const [isClient, setIsClient] = useState(false);
 
+  // Get live portfolio data
+  const {
+    totalMarketValue,
+    unrealizedPL,
+    unrealizedPLPercent,
+    assets,
+    isLoading,
+    isRefetching,
+    refetch,
+    lastUpdated,
+  } = usePortfolioData();
+
+  // Combine loading states for UI feedback
+  const displayLoading = isLoading || isRefetching;
+
+  // Get transactions for timeline
+  const transactions = useTransactionStore((state) => state.transactions);
+  
+  // Find best and worst performers
+  const sortedAssets = [...assets].sort((a, b) => b.plPercent - a.plPercent);
+  const bestPerformer = sortedAssets[0];
+  const worstPerformer = sortedAssets[sortedAssets.length - 1];
+
+  // Allocation Data Calculation
+  const allocationData = React.useMemo(() => {
+    if (totalMarketValue === 0) return [];
+
+    return [...assets]
+      .sort((a, b) => b.marketValue - a.marketValue)
+      .map((asset, index) => ({
+        name: asset.symbol,
+        value: asset.marketValue,
+        percentage: ((asset.marketValue / totalMarketValue) * 100).toFixed(1),
+        color: COLORS[index % COLORS.length]
+      }));
+  }, [assets, totalMarketValue]);
+
   useEffect(() => {
     setIsClient(true);
   }, []);
@@ -157,9 +152,13 @@ export default function WealthOverviewDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-           <button className="flex items-center gap-2 rounded-full border border-border bg-zinc-900/50 px-4 py-2 text-xs font-medium text-zinc-400 transition-hover hover:bg-zinc-800 hover:text-white group">
-            <RefreshCw className="h-3 w-3 transition-transform group-hover:rotate-180" />
-            <span>Sync Data</span>
+           <button 
+             onClick={() => refetch()}
+             disabled={isRefetching}
+             className="flex items-center gap-2 rounded-full border border-border bg-zinc-900/50 px-4 py-2 text-xs font-medium text-zinc-400 transition-hover hover:bg-zinc-800 hover:text-white group disabled:opacity-50 disabled:cursor-not-allowed"
+           >
+            <RefreshCw className={`h-3 w-3 ${isRefetching ? 'animate-spin' : 'transition-transform group-hover:rotate-180'}`} />
+            <span>{isRefetching ? 'Syncing...' : 'Sync Data'}</span>
           </button>
         </div>
       </div>
@@ -174,19 +173,58 @@ export default function WealthOverviewDashboard() {
           delay={0.1}
         >
           <div className="flex flex-col justify-center h-full pb-6">
-            <div className="flex items-baseline gap-1">
-              <span className="text-4xl lg:text-5xl font-bold font-mono tracking-tighter text-white">
-                $125,450.00
-              </span>
+            <div className="flex items-baseline gap-1 min-h-[48px]">
+              <AnimatePresence mode="wait">
+                {displayLoading ? (
+                  <SkeletonPulse key="loading-val" className="h-12 w-48 bg-zinc-800/50" />
+                ) : (
+                  <motion.span 
+                    key="value"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="text-4xl lg:text-5xl font-bold font-mono tracking-tighter text-white"
+                  >
+                    {formatCurrency(totalMarketValue)}
+                  </motion.span>
+                )}
+              </AnimatePresence>
             </div>
-            <div className="mt-4 flex items-center gap-3">
-              <div className="flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-sm font-medium text-[#CCFF00] border border-green-500/20">
-                <TrendingUp className="h-4 w-4" />
-                <span>+2.45%</span>
-              </div>
-              <span className="text-xs text-zinc-500 font-mono">
-                +$3,240.50 (24h)
-              </span>
+            <div className="mt-4 flex items-center gap-3 min-h-[24px]">
+               <AnimatePresence mode="wait">
+                 {displayLoading ? (
+                    <div className="flex items-center gap-3">
+                      <SkeletonPulse className="h-6 w-20 rounded-full" />
+                      <SkeletonPulse className="h-4 w-24" />
+                    </div>
+                 ) : (
+                   <motion.div 
+                     key="stats"
+                     initial={{ opacity: 0 }}
+                     animate={{ opacity: 1 }}
+                     exit={{ opacity: 0 }}
+                     className="flex items-center gap-3"
+                   >
+                      <div className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-sm font-medium border ${
+                        unrealizedPL >= 0 
+                          ? "bg-green-500/10 text-[#CCFF00] border-green-500/20"
+                          : "bg-red-500/10 text-red-500 border-red-500/20"
+                      }`}>
+                        {unrealizedPL >= 0 ? (
+                          <TrendingUp className="h-4 w-4" />
+                        ) : (
+                          <TrendingDown className="h-4 w-4" />
+                        )}
+                        <span>
+                          {`${unrealizedPL >= 0 ? "+" : ""}${unrealizedPLPercent.toFixed(2)}%`}
+                        </span>
+                      </div>
+                      <span className="text-xs text-zinc-500 font-mono">
+                        {`${unrealizedPL >= 0 ? "+" : ""}${formatCurrency(unrealizedPL)} (24h)`}
+                      </span>
+                   </motion.div>
+                 )}
+               </AnimatePresence>
             </div>
             <div className="absolute top-6 right-6">
               <span className="flex h-3 w-3">
@@ -204,135 +242,345 @@ export default function WealthOverviewDashboard() {
           icon={Activity}
           delay={0.2}
         >
-          <div className="flex h-full items-center justify-between gap-4">
-            <div className="h-[160px] w-[160px] flex-shrink-0 relative">
-                 <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={ASSET_ALLOCATION_DATA}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={75}
-                    paddingAngle={5}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {ASSET_ALLOCATION_DATA.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <span className="text-xs font-mono text-zinc-500">Asset<br/>Mix</span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-3 flex-1">
-              {ASSET_ALLOCATION_DATA.map((item) => (
-                <div key={item.name} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="text-zinc-400">{item.name}</span>
+          <AnimatePresence mode="wait">
+            {displayLoading ? (
+              <motion.div 
+                key="loading"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex h-full items-center justify-between gap-4"
+              >
+                  <div className="h-[160px] w-[160px] flex-shrink-0 flex items-center justify-center">
+                     <SkeletonPulse className="h-[140px] w-[140px] rounded-full" />
                   </div>
-                  <span className="font-mono font-medium text-zinc-200">
-                    {item.value}%
-                  </span>
+                  <div className="flex flex-col gap-3 flex-1">
+                     <SkeletonPulse className="h-4 w-full" />
+                     <SkeletonPulse className="h-4 w-3/4" />
+                     <SkeletonPulse className="h-4 w-1/2" />
+                  </div>
+              </motion.div>
+            ) : assets.length === 0 ? (
+              <motion.div 
+                key="empty"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex h-full items-center justify-center text-zinc-600"
+              >
+                 <p className="text-sm">No assets</p>
+              </motion.div>
+            ) : (
+              <motion.div 
+                key="content"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex h-full items-center justify-between gap-4"
+              >
+                <div className="h-[160px] w-[160px] flex-shrink-0 relative">
+                     <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={allocationData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={75}
+                        paddingAngle={5}
+                        dataKey="value"
+                        stroke="none"
+                      >
+                        {allocationData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <span className="text-xs font-mono text-zinc-500">Asset<br/>Mix</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="flex flex-col gap-3 flex-1 overflow-y-auto max-h-[160px] pr-2 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-zinc-800">
+                  {allocationData.map((item) => (
+                    <div key={item.name} className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: item.color }}
+                        />
+                        <span className="text-zinc-400 uppercase truncate max-w-[60px]" title={item.name}>
+                          {item.name}
+                        </span>
+                      </div>
+                      <span className="font-mono font-medium text-zinc-200 text-xs">
+                        {item.percentage}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </BentoCard>
 
         {/* 3. Market Insights (Small Boxes - Best/Worst) */}
         <div className="md:col-span-4 md:row-span-1 grid grid-rows-2 gap-4">
             {/* Best Performer */}
             <BentoCard className="flex items-center justify-between" delay={0.3}>
-                 <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-900 border border-zinc-800">
-                        <Zap className="h-5 w-5 text-[#CCFF00]" />
-                    </div>
-                    <div>
-                        <p className="text-xs text-zinc-500 uppercase font-semibold">Top Gainer</p>
-                        <p className="font-bold text-zinc-200">Solana <span className="text-zinc-600 font-mono text-xs">SOL</span></p>
-                    </div>
-                 </div>
-                 <div className="text-right">
-                     <p className="text-[#CCFF00] font-mono font-medium flex items-center justify-end gap-1">
-                         <TrendingUp className="h-3 w-3"/> +5.8%
-                     </p>
-                     <p className="text-xs text-zinc-500 font-mono">$145.60</p>
-                 </div>
+                 <AnimatePresence mode="wait">
+                   {displayLoading ? (
+                      <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full">
+                        <SkeletonRow />
+                      </motion.div>
+                   ) : bestPerformer ? (
+                    <motion.div key="content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between w-full">
+                     <div className="flex items-center gap-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-900 border border-zinc-800">
+                            <Zap className="h-5 w-5 text-[#CCFF00]" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-zinc-500 uppercase font-semibold">Top Gainer</p>
+                            <CoinDisplay 
+                              id={bestPerformer.coinId} 
+                              symbol={bestPerformer.symbol} 
+                              showName 
+                              className="font-bold text-zinc-200 capitalize"
+                              textClassName="items-start"
+                            />
+                        </div>
+                     </div>
+                     <div className="text-right">
+                         <p className="text-[#CCFF00] font-mono font-medium flex items-center justify-end gap-1">
+                             <TrendingUp className="h-3 w-3"/> +{bestPerformer.plPercent.toFixed(2)}%
+                         </p>
+                         <p className="text-xs text-zinc-500 font-mono">${bestPerformer.currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}</p>
+                     </div>
+                   </motion.div>
+                   ) : (
+                     <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex w-full justify-center text-zinc-600">
+                       <p className="text-xs">No data</p>
+                     </motion.div>
+                   )}
+                 </AnimatePresence>
             </BentoCard>
 
             {/* Worst Performer */}
              <BentoCard className="flex items-center justify-between" delay={0.4}>
-                 <div className="flex items-center gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-900 border border-zinc-800">
-                         <TrendingDown className="h-5 w-5 text-red-500" />
-                    </div>
-                    <div>
-                        <p className="text-xs text-zinc-500 uppercase font-semibold">Top Loser</p>
-                        <p className="font-bold text-zinc-200">Ethereum <span className="text-zinc-600 font-mono text-xs">ETH</span></p>
-                    </div>
-                 </div>
-                 <div className="text-right">
-                     <p className="text-red-500 font-mono font-medium flex items-center justify-end gap-1">
-                         <TrendingDown className="h-3 w-3"/> -1.2%
-                     </p>
-                      <p className="text-xs text-zinc-500 font-mono">$3,450.12</p>
-                 </div>
+                 <AnimatePresence mode="wait">
+                   {displayLoading ? (
+                      <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full">
+                        <SkeletonRow />
+                      </motion.div>
+                   ) : worstPerformer ? (
+                    <motion.div key="content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center justify-between w-full">
+                     <div className="flex items-center gap-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-900 border border-zinc-800">
+                             <TrendingDown className="h-5 w-5 text-red-500" />
+                        </div>
+                        <div>
+                            <p className="text-xs text-zinc-500 uppercase font-semibold">Top Loser</p>
+                            <CoinDisplay 
+                              id={worstPerformer.coinId} 
+                              symbol={worstPerformer.symbol} 
+                              showName 
+                              className="font-bold text-zinc-200 capitalize"
+                              textClassName="items-start"
+                            />
+                        </div>
+                     </div>
+                     <div className="text-right">
+                         <p className={`font-mono font-medium flex items-center justify-end gap-1 ${worstPerformer.plPercent >= 0 ? "text-[#CCFF00]" : "text-red-500"}`}>
+                             {worstPerformer.plPercent >= 0 ? <TrendingUp className="h-3 w-3"/> : <TrendingDown className="h-3 w-3"/>}
+                             {worstPerformer.plPercent >= 0 ? "+" : ""}{worstPerformer.plPercent.toFixed(2)}%
+                         </p>
+                          <p className="text-xs text-zinc-500 font-mono">${worstPerformer.currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}</p>
+                     </div>
+                   </motion.div>
+                   ) : (
+                     <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex w-full justify-center text-zinc-600">
+                       <p className="text-xs">No data</p>
+                     </motion.div>
+                   )}
+                 </AnimatePresence>
             </BentoCard>
         </div>
 
-        {/* 4. Performance History (Wide Area Chart) */}
-        <BentoCard
-          className="md:col-span-8 md:row-span-2 min-h-[300px]"
-          title="Portfolio Performance (7D)"
-          icon={Activity}
-          delay={0.5}
-        >
-          <div className="h-full w-full pt-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={PERFORMANCE_DATA}>
-                <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <Tooltip
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
+        {/* 4. P/L Comparison & Transaction History */}
+        <div className="md:col-span-8 md:row-span-2 grid grid-rows-2 gap-4">
+          {/* P/L Comparison Chart */}
+          <BentoCard
+            title="Profit & Loss by Asset"
+            icon={TrendingUp}
+            delay={0.5}
+          >
+            <div className="h-full w-full">
+              <AnimatePresence mode="wait">
+                {displayLoading ? (
+                  <motion.div 
+                    key="loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-4"
+                  >
+                     {[1, 2, 3].map((i) => <SkeletonRow key={i} />)}
+                  </motion.div>
+                ) : assets.length === 0 ? (
+                  <motion.div 
+                    key="empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center justify-center h-full text-zinc-600"
+                  >
+                    <p className="text-sm">No assets to display</p>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    key="content"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-3"
+                  >
+                    {assets.slice(0, 5).map((asset, index) => {
+                      const isProfit = asset.plAmount >= 0;
+                      const percentage = asset.plPercent;
+                      const maxAbsPercent = Math.max(...assets.map(a => Math.abs(a.plPercent)));
+                      const barWidth = maxAbsPercent > 0 ? (Math.abs(percentage) / maxAbsPercent) * 100 : 0;
+
                       return (
-                        <div className="rounded-lg border border-zinc-800 bg-zinc-950/90 p-3 shadow-xl backdrop-blur-sm">
-                          <p className="text-xs text-zinc-400 mb-1">
-                            {payload[0].payload.day}
-                          </p>
-                          <p className="font-mono font-bold text-blue-400">
-                            {formatCurrency(payload[0].value as number)}
-                          </p>
-                        </div>
+                        <motion.div
+                          key={asset.coinId}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                          className="group"
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <CoinDisplay 
+                                id={asset.coinId}
+                                symbol={asset.symbol}
+                                showName={false}
+                              />
+                              {/* Original name was not shown, keeping it consistent or using showName={false} */}
+                              <span className="text-sm font-semibold text-zinc-300 uppercase">{asset.symbol}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className={`text-sm font-mono font-bold ${isProfit ? 'text-[#CCFF00]' : 'text-red-500'}`}>
+                                {isProfit ? '+' : ''}{percentage.toFixed(2)}%
+                              </span>
+                              <span className={`text-xs font-mono ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {isProfit ? '+' : ''}{formatCurrency(asset.plAmount)}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="h-2 bg-zinc-900 rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${barWidth}%` }}
+                              transition={{ duration: 0.8, delay: index * 0.1 + 0.2 }}
+                              className={`h-full rounded-full ${
+                                isProfit 
+                                  ? 'bg-gradient-to-r from-emerald-500 to-[#CCFF00]' 
+                                  : 'bg-gradient-to-r from-red-600 to-red-500'
+                              }`}
+                            />
+                          </div>
+                        </motion.div>
                       );
-                    }
-                    return null;
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#3B82F6"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorValue)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </BentoCard>
+                    })}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </BentoCard>
+
+          {/* Transaction History Timeline */}
+          <BentoCard
+            title="Recent Transactions"
+            icon={Activity}
+            delay={0.6}
+          >
+            <div className="h-full w-full overflow-y-auto">
+              <AnimatePresence mode="wait">
+                {transactions.length === 0 && !displayLoading ? (
+                  <motion.div 
+                    key="empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center justify-center h-full text-zinc-600"
+                  >
+                    <p className="text-sm">No transactions yet</p>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                     key="list"
+                     initial={{ opacity: 0 }}
+                     animate={{ opacity: 1 }}
+                     exit={{ opacity: 0 }}
+                     className="space-y-2"
+                  >
+                    {/* Since Transactions are also fetched/updated, using displayLoading for them if we consider them part of "Sync" in a real app, 
+                        though technically they come from store. But let's animate them too for consistency if desired. 
+                        Actually, transactions store might not change during price fetch unless we re-fetch transactions too. 
+                        But the user asked for "every component ui". So let's fake it or assume sync acts on them too.
+                        DisplayLoading affects everything.
+                    */}
+                    {displayLoading ? (
+                        [1, 2, 3].map((i) => <SkeletonRow key={i} />)
+                    ) : (
+                        transactions
+                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                        .slice(0, 6)
+                        .map((transaction, index) => (
+                          <motion.div
+                            key={transaction.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: index * 0.08 }}
+                            className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-white/5 transition-colors group"
+                          >
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                              <ArrowUpRight className="h-4 w-4 text-emerald-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <CoinDisplay 
+                                  // Transactions might typically save symbol, perhaps not ID. 
+                                  // If ID is missing, fallback to symbol is handled by component.
+                                  symbol={transaction.symbol}
+                                  // Optionally try to pass ID if available in transaction object, else undefined
+                                  className="font-semibold text-zinc-200 uppercase"
+                                  showName={false}
+                                />
+                                <span className="text-xs text-zinc-500">
+                                  {format(new Date(transaction.date), 'MMM dd, yyyy')}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-zinc-400">
+                                <span className="font-mono">{transaction.amount.toLocaleString()} {transaction.symbol}</span>
+                                <span>@</span>
+                                <span className="font-mono">{formatCurrency(transaction.costPerUnit)}</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-mono font-bold text-zinc-300">
+                                {formatCurrency(transaction.amount * transaction.costPerUnit)}
+                              </p>
+                            </div>
+                          </motion.div>
+                        ))
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </BentoCard>
+        </div>
 
         {/* 5. Top Holdings Watchlist */}
         <BentoCard
@@ -347,38 +595,73 @@ export default function WealthOverviewDashboard() {
                 <span className="text-right">Value</span>
                 <span className="text-right">Weight</span>
             </div>
-            {TOP_HOLDINGS.map((asset) => (
-              <div
-                key={asset.id}
-                className="group grid grid-cols-3 items-center py-3 px-2 hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-zinc-800/50 border border-zinc-700/30 text-xs font-bold text-zinc-300">
-                    {asset.symbol[0]}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm text-zinc-200">{asset.symbol}</p>
-                    <p className="text-[10px] text-zinc-500">{asset.name}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono text-sm text-zinc-200">
-                    ${asset.value.toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex flex-col items-end justify-center ml-auto w-full max-w-[80px]">
-                     <div className="text-xs font-mono text-blue-400 mb-1">{asset.weight}%</div>
-                     <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
-                        <motion.div 
-                          className="h-full bg-blue-500 rounded-full"
-                          initial={{ width: 0 }}
-                          animate={{ width: `${asset.weight}%` }}
-                          transition={{ duration: 1, delay: 0.5 }}
-                        />
-                     </div>
-                </div>
-              </div>
-            ))}
+            <AnimatePresence mode="wait">
+              {displayLoading ? (
+                 <motion.div 
+                    key="loading"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-4 pt-2"
+                  >
+                     {[1, 2, 3].map((i) => <SkeletonRow key={i} />)}
+                  </motion.div>
+              ) : assets.length === 0 ? (
+                <motion.div 
+                    key="empty"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="py-8 text-center text-zinc-600"
+                >
+                  <p className="text-sm">No holdings to display</p>
+                </motion.div>
+              ) : (
+                <motion.div
+                    key="content"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                >
+                    {assets.slice(0, 4).map((asset) => {
+                      const weight = totalMarketValue > 0 ? (asset.marketValue / totalMarketValue) * 100 : 0;
+                      
+                      return (
+                        <div
+                          key={asset.coinId}
+                          className="group grid grid-cols-3 items-center py-3 px-2 hover:bg-white/5 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <div className="flex items-center gap-3">
+                            <CoinDisplay 
+                              id={asset.coinId} 
+                              symbol={asset.symbol} 
+                              showName 
+                              className="font-semibold text-zinc-200 uppercase"
+                              textClassName="items-start"
+                            />
+                          </div>
+                          <div className="text-right">
+                            <p className="font-mono text-sm text-zinc-200">
+                              ${asset.marketValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                            </p>
+                          </div>
+                          <div className="flex flex-col items-end justify-center ml-auto w-full max-w-[80px]">
+                               <div className="text-xs font-mono text-blue-400 mb-1">{weight.toFixed(0)}%</div>
+                               <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                                  <motion.div 
+                                    className="h-full bg-blue-500 rounded-full"
+                                    initial={{ width: 0 }}
+                                    animate={{ width: `${weight}%` }}
+                                    transition={{ duration: 1, delay: 0.5 }}
+                                  />
+                               </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
            <div className="mt-4 pt-3 border-t border-zinc-900/50 text-center">
                 <button className="text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors">
@@ -403,7 +686,7 @@ export default function WealthOverviewDashboard() {
             <span className="flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" /> Encrypted
             </span>
-            <span>Last Updated: Just now</span>
+            <span>Last Updated: {lastUpdated ? format(lastUpdated, "HH:mm:ss") : "..."}</span>
          </div>
        </motion.div>
     </div>

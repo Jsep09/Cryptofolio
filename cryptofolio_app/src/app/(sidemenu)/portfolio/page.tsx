@@ -17,56 +17,9 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
-
-// --- Mock Data ---
-interface Asset {
-  id: string;
-  symbol: string;
-  name: string;
-  balance: number;
-  avgBuyPrice: number;
-  currentPrice: number;
-  type: "Crypto" | "Stock" | "Cash";
-}
-
-const mockAssets: Asset[] = [
-  {
-    id: "1",
-    symbol: "BTC",
-    name: "Bitcoin",
-    balance: 0.523,
-    avgBuyPrice: 45000,
-    currentPrice: 67234.56,
-    type: "Crypto",
-  },
-  {
-    id: "2",
-    symbol: "ETH",
-    name: "Ethereum",
-    balance: 4.2,
-    avgBuyPrice: 2100,
-    currentPrice: 3456.78,
-    type: "Crypto",
-  },
-  {
-    id: "3",
-    symbol: "NVDA",
-    name: "NVIDIA Corp",
-    balance: 50,
-    avgBuyPrice: 450,
-    currentPrice: 890.12,
-    type: "Stock",
-  },
-  {
-    id: "4",
-    symbol: "USDT",
-    name: "Tether",
-    balance: 15400,
-    avgBuyPrice: 1,
-    currentPrice: 1.0,
-    type: "Cash",
-  },
-];
+import { usePortfolioData } from "@/hooks/usePortfolioData";
+import { useTransactionStore } from "@/store/transactionStore";
+import { CoinDisplay } from "@/components/coin-display";
 
 // --- Animation Variants ---
 const containerVariants = {
@@ -88,17 +41,18 @@ export default function PortfolioPage() {
   const [filter, setFilter] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Calculations
-  const totalCost = mockAssets.reduce(
-    (acc, asset) => acc + asset.balance * asset.avgBuyPrice,
-    0
-  );
-  const totalValue = mockAssets.reduce(
-    (acc, asset) => acc + asset.balance * asset.currentPrice,
-    0
-  );
-  const unrealizedPL = totalValue - totalCost;
-  const unrealizedPLPercent = (unrealizedPL / totalCost) * 100;
+  // Get live portfolio data
+  const {
+    totalMarketValue,
+    totalCostBasis,
+    unrealizedPL,
+    unrealizedPLPercent,
+    assets,
+    isLoading,
+    error,
+  } = usePortfolioData();
+
+  const addTransaction = useTransactionStore((state) => state.addTransaction);
 
   return (
     <motion.div
@@ -132,7 +86,11 @@ export default function PortfolioPage() {
                 Total Invested
               </p>
               <p className="text-2xl font-bold font-mono text-foreground">
-                ${totalCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                {isLoading ? (
+                  <span className="text-zinc-600">Loading...</span>
+                ) : (
+                  `$${totalCostBasis.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+                )}
               </p>
             </div>
           </CardContent>
@@ -149,7 +107,11 @@ export default function PortfolioPage() {
                 Current Value
               </p>
               <p className="text-2xl font-bold font-mono text-foreground">
-                ${totalValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                {isLoading ? (
+                  <span className="text-zinc-600">Loading...</span>
+                ) : (
+                  `$${totalMarketValue.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+                )}
               </p>
             </div>
           </CardContent>
@@ -165,20 +127,26 @@ export default function PortfolioPage() {
               <div className="flex items-baseline gap-2">
                 <p
                   className={`text-2xl font-bold font-mono ${
-                    unrealizedPL >= 0 ? "text-emerald-500" : "text-red-500" // Serious Green/Red
+                    unrealizedPL >= 0 ? "text-[#CCFF00]" : "text-red-500"
                   }`}
                 >
-                  {unrealizedPL >= 0 ? "+" : ""}
-                  ${Math.abs(unrealizedPL).toLocaleString("en-US", {
-                    maximumFractionDigits: 0,
-                  })}
+                  {isLoading ? (
+                    <span className="text-zinc-600">...</span>
+                  ) : (
+                    <>
+                      {unrealizedPL >= 0 ? "+" : ""}
+                      ${Math.abs(unrealizedPL).toLocaleString("en-US", {
+                        maximumFractionDigits: 0,
+                      })}
+                    </>
+                  )}
                 </p>
                 <span
                   className={`text-sm font-medium ${
-                    unrealizedPL >= 0 ? "text-emerald-500" : "text-red-500"
+                    unrealizedPL >= 0 ? "text-[#CCFF00]" : "text-red-500"
                   }`}
                 >
-                  ({unrealizedPLPercent.toFixed(2)}%)
+                  {!isLoading && `(${unrealizedPLPercent.toFixed(2)}%)`}
                 </span>
               </div>
             </div>
@@ -213,7 +181,7 @@ export default function PortfolioPage() {
           className="w-full md:w-auto bg-neon-lime text-primary-foreground hover:bg-primary/90 font-bold gap-2 shadow-lg shadow-primary/20 transition-all border-0"
         >
           <Plus className="w-4 h-4" />
-          Add Asset
+          Add Transaction
         </Button>
       </div>
 
@@ -238,72 +206,84 @@ export default function PortfolioPage() {
               initial="hidden"
               animate="visible"
             >
-              {mockAssets.map((asset) => {
-                const totalAssetValue = asset.balance * asset.currentPrice;
-                const totalBuyCost = asset.balance * asset.avgBuyPrice;
-                const pl = totalAssetValue - totalBuyCost;
-                const plPercent = (pl / totalBuyCost) * 100;
+              {isLoading ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                    Loading portfolio data...
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-red-500">
+                    Error loading data: {error.message}
+                  </td>
+                </tr>
+              ) : assets.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-6 py-12 text-center text-muted-foreground">
+                    No assets found. Start by adding your first investment.
+                  </td>
+                </tr>
+              ) : (
+                assets.map((asset) => {
+                  const avgBuyPrice = asset.costBasis / asset.totalAmount;
 
-                return (
-                  <motion.tr
-                    key={asset.id}
-                    variants={itemVariants} // Staggered entry
-                    whileHover={{ backgroundColor: "rgba(255,255,255,0.02)" }}
-                    className="group transition-colors cursor-pointer"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center font-bold text-xs text-foreground border border-border">
-                          {asset.symbol[0]}
+                  return (
+                    <motion.tr
+                      key={asset.coinId}
+                      variants={itemVariants}
+                      whileHover={{ backgroundColor: "rgba(255,255,255,0.02)" }}
+                      className="group transition-colors cursor-pointer"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <CoinDisplay 
+                            id={asset.coinId}
+                            symbol={asset.symbol}
+                            showName
+                            className="font-bold text-foreground"
+                            textClassName="items-start"
+                          />
                         </div>
-                        <div>
-                          <p className="font-bold text-foreground">{asset.symbol}</p>
-                          <p className="text-xs text-muted-foreground">{asset.name}</p>
+                      </td>
+                      <td className="px-6 py-4 text-right font-mono text-foreground font-medium">
+                        {asset.totalAmount.toLocaleString("en-US", { maximumFractionDigits: 8 })} {asset.symbol}
+                      </td>
+                      <td className="px-6 py-4 text-right font-mono text-muted-foreground">
+                        ${avgBuyPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                               <span className="font-mono text-foreground font-medium">
+                                  ${asset.currentPrice.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                               </span>
+                          </div>
+                      </td>
+                      <td className="px-6 py-4 text-right font-mono font-bold text-foreground">
+                        ${asset.marketValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className={`flex flex-col items-end ${asset.plAmount >= 0 ? "text-[#CCFF00]" : "text-red-500"}`}>
+                          <span className="font-bold font-mono">
+                            {asset.plAmount >= 0 ? "+" : ""}{asset.plPercent.toFixed(2)}%
+                          </span>
+                          <span className="text-xs opacity-80 font-mono">
+                              {asset.plAmount >= 0 ? "+" : ""}${Math.abs(asset.plAmount).toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                          </span>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right font-mono text-foreground font-medium">
-                      {asset.balance.toLocaleString("en-US")} {asset.symbol}
-                    </td>
-                    <td className="px-6 py-4 text-right font-mono text-muted-foreground">
-                      ${asset.avgBuyPrice.toLocaleString("en-US")}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                             <span className="font-mono text-foreground font-medium">
-                                ${asset.currentPrice.toLocaleString("en-US")}
-                             </span>
-                        </div>
-                    </td>
-                    <td className="px-6 py-4 text-right font-mono font-bold text-foreground">
-                      ${totalAssetValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className={`flex flex-col items-end ${pl >= 0 ? "text-emerald-500" : "text-red-500"}`}>
-                        <span className="font-bold font-mono">
-                          {pl >= 0 ? "+" : ""}{plPercent.toFixed(2)}%
-                        </span>
-                        <span className="text-xs opacity-80 font-mono">
-                            {pl >= 0 ? "+" : ""}${Math.abs(pl).toLocaleString("en-US", { maximumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                        <MoreHorizontal className="w-4 h-4" />
-                      </Button>
-                    </td>
-                  </motion.tr>
-                );
-              })}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </td>
+                    </motion.tr>
+                  );
+                })
+              )}
             </motion.tbody>
           </table>
-          {mockAssets.length === 0 && (
-            <div className="p-12 text-center text-muted-foreground">
-              No assets found. Start by adding your first investment.
-            </div>
-          )}
         </div>
       </Card>
     </motion.div>
