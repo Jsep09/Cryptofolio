@@ -5,10 +5,15 @@
  * 
  * Fetches crypto prices from our secure server-side API route
  * and calculates portfolio metrics using Zustand transaction data.
+ * 
+ * UPDATED: Now supports fetching transactions from Supabase if logged in.
  */
 
-import { useQuery } from '@tanstack/react-query';
-import { useTransactionStore } from '@/store/transactionStore';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTransactionStore, Transaction } from '@/store/transactionStore';
+import { useAuth } from '@/components/auth-provider';
+import { createClient } from '@/lib/supabase/client';
+import { useEffect } from 'react';
 
 interface AssetData {
   coinId: string;
@@ -36,13 +41,50 @@ interface PortfolioData {
 }
 
 export function usePortfolioData(): PortfolioData {
+  const { user } = useAuth();
+  const supabase = createClient();
+  const queryClient = useQueryClient();
+  
   const transactions = useTransactionStore((state) => state.transactions);
+  const setTransactions = useTransactionStore((state) => state.setTransactions);
   const getUniqueCoinIds = useTransactionStore((state) => state.getUniqueCoinIds);
+
+  // 1. Fetch transactions from Supabase if logged in
+  const { data: dbTransactions, isLoading: isDbLoading } = useQuery({
+    queryKey: ['transactions', user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*');
+        
+      if (error) throw error;
+      
+      // Map DB fields (snake_case) to Transaction interface (camelCase)
+      return (data || []).map((t: any) => ({
+        id: t.id,
+        symbol: t.symbol,
+        coinId: t.coin_id,
+        amount: Number(t.amount),
+        costPerUnit: Number(t.cost_per_unit),
+        date: t.date,
+      })) as Transaction[];
+    },
+    enabled: !!user,
+  });
+
+  // 2. Sync DB transactions to Store
+  useEffect(() => {
+    if (user && dbTransactions) {
+      setTransactions(dbTransactions);
+    }
+  }, [user, dbTransactions, setTransactions]);
 
   const coinIds = getUniqueCoinIds();
 
-  // Fetch live prices from our server-side API route (not directly from CoinGecko)
-  const { data: priceData, isLoading, isRefetching, refetch, error } = useQuery({
+  // 3. Fetch live prices
+  const { data: priceData, isLoading: isPriceLoading, isRefetching, refetch, error } = useQuery({
     queryKey: ['crypto-prices', coinIds],
     queryFn: async () => {
       if (coinIds.length === 0) {
@@ -50,7 +92,6 @@ export function usePortfolioData(): PortfolioData {
       }
 
       try {
-        // Call our internal API route instead of CoinGecko directly
         const response = await fetch(
           `/api/crypto/prices?ids=${coinIds.join(',')}`
         );
@@ -71,7 +112,7 @@ export function usePortfolioData(): PortfolioData {
     enabled: coinIds.length > 0,
   });
 
-  // Calculate portfolio metrics
+  // 4. Calculate portfolio metrics
   const calculatePortfolioData = (): Omit<PortfolioData, 'isLoading' | 'error' | 'lastUpdated' | 'refetch' | 'isRefetching'> => {
     if (!priceData || Object.keys(priceData).length === 0) {
       return {
@@ -83,7 +124,6 @@ export function usePortfolioData(): PortfolioData {
       };
     }
 
-    // Group transactions by coinId and calculate aggregated data
     const assetMap = new Map<string, AssetData>();
 
     transactions.forEach((transaction) => {
@@ -104,14 +144,13 @@ export function usePortfolioData(): PortfolioData {
           currentPrice,
           marketValue: transactionValue,
           costBasis: transactionCost,
-          plAmount: 0, // Will calculate below
-          plPercent: 0, // Will calculate below
+          plAmount: 0, 
+          plPercent: 0,
           portfolioShare: 0,
         });
       }
     });
 
-    // Calculate P/L for each asset
     const assets: AssetData[] = [];
     let totalMarketValue = 0;
     let totalCostBasis = 0;
@@ -126,12 +165,10 @@ export function usePortfolioData(): PortfolioData {
       assets.push(asset);
     });
 
-    // Sort by market value (descending)
     assets.sort((a, b) => b.marketValue - a.marketValue);
 
     const unrealizedPL = totalMarketValue - totalCostBasis;
     const unrealizedPLPercent = totalCostBasis > 0 ? (unrealizedPL / totalCostBasis) * 100 : 0;
-
 
     assets.forEach((asset)=>{
       if(totalMarketValue > 0){
@@ -147,7 +184,6 @@ export function usePortfolioData(): PortfolioData {
       unrealizedPL,
       unrealizedPLPercent,
       assets,
-
     };
   };
 
@@ -155,7 +191,7 @@ export function usePortfolioData(): PortfolioData {
 
   return {
     ...portfolioMetrics,
-    isLoading,
+    isLoading: user ? (isDbLoading || isPriceLoading) : isPriceLoading, 
     isRefetching,
     refetch,
     error: error as Error | null,

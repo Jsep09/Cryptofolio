@@ -25,6 +25,7 @@ interface TransactionStore {
   removeTransaction: (id: string) => void;
   updateTransaction: (id: string, data: Partial<Transaction>) => void;
   clearAllTransactions: () => void;
+  setTransactions: (transactions: Transaction[]) => void;
   
   // Computed getters
   getUniqueCoinIds: () => string[];
@@ -92,6 +93,11 @@ export const useTransactionStore = create<TransactionStore>()(
       // Clear all transactions
       clearAllTransactions: () => {
         set({ transactions: [] });
+      },
+
+      // Set all transactions (useful for syncing with DB)
+      setTransactions: (transactions) => {
+        set({ transactions });
       },
 
       // Get unique coin IDs for API queries

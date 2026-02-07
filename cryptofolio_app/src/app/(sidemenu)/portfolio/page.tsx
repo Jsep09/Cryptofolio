@@ -6,20 +6,21 @@ import { AddTransactionModal } from "./add-transaction-modal";
 import {
   Wallet,
   TrendingUp,
-  TrendingDown,
   DollarSign,
   Search,
   Plus,
   Filter,
   MoreHorizontal,
-  RefreshCw,
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Card, CardContent } from "@/app/components/ui/card";
 import { Button } from "@/app/components/ui/button";
 import { usePortfolioData } from "@/hooks/usePortfolioData";
 import { useTransactionStore } from "@/store/transactionStore";
 import { CoinDisplay } from "@/components/coin-display";
+import { useAuth } from "@/components/auth-provider";
+import { createClient } from "@/lib/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
 
 // --- Animation Variants ---
 const containerVariants = {
@@ -40,6 +41,9 @@ const itemVariants = {
 export default function PortfolioPage() {
   const [filter, setFilter] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const { user } = useAuth();
+  const supabase = createClient();
+  const queryClient = useQueryClient();
 
   // Get live portfolio data
   const {
@@ -54,6 +58,43 @@ export default function PortfolioPage() {
 
   const addTransaction = useTransactionStore((state) => state.addTransaction);
 
+  const handleSaveTransaction = async (data: any) => {
+    
+    if (user) {
+      // Save to Supabase
+      try {
+        const { error } = await supabase.from("transactions").insert({
+          user_id: user.id,
+          coin_id: data.coinId,
+          symbol: data.symbol,
+          amount: Number(data.amount),
+          cost_per_unit: Number(data.costPerUnit),
+          date: data.date,
+        });
+
+        if (error) throw error;
+        
+        // Invalidate query to trigger refetch in usePortfolioData
+        queryClient.invalidateQueries({ queryKey: ["transactions"] });
+        
+      } catch (err) {
+        console.error("Failed to save transaction:", err);
+        // Ideally show a toast error here
+      }
+    } else {
+      // Save to Local Store (Guest mode)
+      addTransaction({
+        symbol: data.symbol,
+        coinId: data.coinId,
+        amount: Number(data.amount),
+        costPerUnit: Number(data.costPerUnit),
+        date: data.date,
+      });
+    }
+    
+    setIsModalOpen(false);
+  };
+
   return (
     <motion.div
       className="p-6 md:p-8 space-y-8"
@@ -64,10 +105,7 @@ export default function PortfolioPage() {
       <AddTransactionModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSave={(data) => {
-          console.log("Saving transaction:", data);
-          setIsModalOpen(false);
-        }}
+        onSave={handleSaveTransaction}
       />
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Portfolio</h1>
@@ -226,7 +264,7 @@ export default function PortfolioPage() {
                 </tr>
               ) : (
                 assets.map((asset) => {
-                  const avgBuyPrice = asset.costBasis / asset.totalAmount;
+                  const avgBuyPrice = asset.totalAmount > 0 ? asset.costBasis / asset.totalAmount : 0;
 
                   return (
                     <motion.tr
