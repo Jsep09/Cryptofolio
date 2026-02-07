@@ -1,10 +1,13 @@
 "use client"; // ใช้ Client Component เพื่อรองรับการคลิกเปิด-ปิดในอนาคต
 
 import React from "react";
-import { LayoutDashboard, Wallet, History, Settings, Menu } from "lucide-react";
+import { LayoutDashboard, Wallet, History, Settings, Menu, LogOut, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/app/lib/utils"; // ฟังก์ชันช่วยจัดการ Class ของ Shadcn
+import { useAuth } from "@/components/auth-provider";
+
+import { Background } from "@/app/components/ui/background";
 
 export default function DashboardLayout({
   children,
@@ -12,17 +15,19 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { user, signOut } = useAuth();
 
   // กำหนดเมนู Sidebar
   const navigation = [
     { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
     { name: "Portfolio", href: "/portfolio", icon: Wallet },
     // { name: "Transactions", href: "/transactions", icon: History },
-    // { name: "Settings", href: "/settings", icon: Settings },
+    { name: "Settings", href: "/settings", icon: Settings },
   ];
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex h-screen text-foreground overflow-hidden relative">
+      <Background />
       {/* --- SIDEBAR (Desktop) --- */}
       <aside className="hidden md:flex w-64 flex-col border-r border-border bg-sidebar">
         <div className="p-6">
@@ -50,12 +55,26 @@ export default function DashboardLayout({
         </nav>
 
         <div className="p-4 border-t border-border">
-          <div className="flex items-center gap-3 px-2">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-neon-cyan to-neon-lime" />
-            <div className="overflow-hidden">
-              <p className="text-xs font-medium truncate">Demo User</p>
-              <p className="text-[10px] text-primary truncate">Pro Plan</p>
+          <div className="flex items-center justify-between gap-3 px-2">
+            <div className="flex items-center gap-3 overflow-hidden">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-neon-cyan to-neon-lime flex items-center justify-center text-background font-bold text-xs shrink-0">
+                    {user?.email?.[0].toUpperCase() || <User className="w-4 h-4" />}
+                </div>
+                <div className="overflow-hidden">
+                <p className="text-xs font-medium truncate">{user?.email || "Guest"}</p>
+                <p className="text-[10px] text-primary truncate">{user ? "Pro Member" : "Free Plan"}</p>
+                </div>
             </div>
+            {user && (
+                 <button 
+                 onClick={() => signOut()}
+                 className="text-muted-foreground hover:text-red-500 transition-colors p-1"
+                 title="Sign Out"
+               >
+                 <LogOut className="w-4 h-4" />
+               </button>
+            )}
+           
           </div>
         </div>
       </aside>

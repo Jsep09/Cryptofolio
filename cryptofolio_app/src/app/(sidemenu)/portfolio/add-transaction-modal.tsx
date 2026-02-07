@@ -1,11 +1,19 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Calendar, DollarSign } from "lucide-react";
+import { X, Calendar as CalendarIcon, DollarSign } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { format } from "date-fns";
 
 import { cn } from "@/app/lib/utils";
 import { Button } from "@/app/components/ui/button";
+import { CryptoAutocomplete } from "@/components/CryptoAutocomplete";
+import { Calendar } from "@/app/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/app/components/ui/popover";
 
 interface AddTransactionModalProps {
   isOpen: boolean;
@@ -24,7 +32,7 @@ export function AddTransactionModal({
   const [assetSymbol, setAssetSymbol] = useState("");
   const [quantity, setQuantity] = useState("");
   const [pricePerUnit, setPricePerUnit] = useState("");
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState<Date | undefined>(new Date());
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +41,7 @@ export function AddTransactionModal({
       assetSymbol,
       quantity: parseFloat(quantity),
       pricePerUnit: parseFloat(pricePerUnit),
-      date,
+      date: date ? date.toISOString() : new Date().toISOString(),
     });
     onClose();
   };
@@ -104,18 +112,14 @@ export function AddTransactionModal({
                     </button>
                   </div>
 
-                  {/* Asset Symbol */}
+                  {/* Asset Selection */}
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Asset Symbol
+                      Select Coin
                     </label>
-                    <input
-                      required
-                      type="text"
-                      placeholder="e.g. BTC"
-                      value={assetSymbol}
-                      onChange={(e) => setAssetSymbol(e.target.value.toUpperCase())}
-                      className="w-full bg-secondary/50 border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                    <CryptoAutocomplete
+                      className="w-full bg-secondary/50 border-border"
+                      onSelect={(id) => setAssetSymbol(id)}
                     />
                   </div>
 
@@ -133,7 +137,7 @@ export function AddTransactionModal({
                           placeholder="0.00"
                           value={quantity}
                           onChange={(e) => setQuantity(e.target.value)}
-                          className="w-full bg-secondary/50 border border-border rounded-lg pl-4 pr-4 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                          className="w-full bg-secondary/50 border border-border rounded-lg pl-4 pr-4 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
                     </div>
@@ -152,7 +156,7 @@ export function AddTransactionModal({
                           placeholder="0.00"
                           value={pricePerUnit}
                           onChange={(e) => setPricePerUnit(e.target.value)}
-                          className="w-full bg-secondary/50 border border-border rounded-lg pl-9 pr-4 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+                          className="w-full bg-secondary/50 border border-border rounded-lg pl-9 pr-4 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                       </div>
                     </div>
@@ -163,16 +167,28 @@ export function AddTransactionModal({
                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Date
                     </label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                      <input
-                        required
-                        type="date"
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        className="w-full bg-secondary/50 border border-border rounded-lg pl-9 pr-4 py-2.5 text-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono appearance-none"
-                      />
-                    </div>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal bg-secondary/50 border-border h-[42px] hover:bg-secondary/70",
+                            !date && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                          {date ? format(date, "PPP") : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 border-zinc-800 bg-zinc-950" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={date}
+                          onSelect={setDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
                   <div className="pt-4 flex gap-3">
