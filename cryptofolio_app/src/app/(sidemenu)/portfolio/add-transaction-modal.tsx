@@ -29,18 +29,20 @@ export function AddTransactionModal({
   const [type, setType] = useState<"BUY" | "SELL">("BUY");
 
   // Form States
-  const [assetSymbol, setAssetSymbol] = useState("");
+  const [selectedCoin, setSelectedCoin] = useState<{ id: string; symbol: string } | null>(null);
   const [quantity, setQuantity] = useState("");
   const [pricePerUnit, setPricePerUnit] = useState("");
   const [date, setDate] = useState<Date | undefined>(new Date());
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedCoin) return;
+    
     onSave({
-      type,
-      assetSymbol,
-      quantity: parseFloat(quantity),
-      pricePerUnit: parseFloat(pricePerUnit),
+      coinId: selectedCoin.id,
+      symbol: selectedCoin.symbol,
+      amount: parseFloat(quantity),
+      costPerUnit: parseFloat(pricePerUnit),
       date: date ? date.toISOString() : new Date().toISOString(),
     });
     onClose();
@@ -119,7 +121,7 @@ export function AddTransactionModal({
                     </label>
                     <CryptoAutocomplete
                       className="w-full bg-secondary/50 border-border"
-                      onSelect={(id) => setAssetSymbol(id)}
+                      onSelect={(coin) => setSelectedCoin({ id: coin.id, symbol: coin.symbol })}
                     />
                   </div>
 
