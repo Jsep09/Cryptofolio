@@ -1,5 +1,6 @@
 import "./style/globals.css";
 import { IBM_Plex_Sans_Thai, Inter, Roboto_Mono } from "next/font/google";
+import { Providers } from "./providers";
 
 const ibm = IBM_Plex_Sans_Thai({
   subsets: ["thai", "latin"],
@@ -27,7 +28,7 @@ export default function RootLayout({
       <body
         className={`${ibm.variable} ${inter.variable} ${robotoMono.variable} font-sans antialiased`}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
